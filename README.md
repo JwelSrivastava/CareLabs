@@ -27,3 +27,5 @@ The `users` table stores name, unique email, password hash, role (`USER` or `ADM
 `POST /api/v1/auth/signup` creates a normal user. The password must be at least 8 characters. A duplicate email returns 409. Clients cannot choose a role at signup.
 
 `POST /api/v1/auth/login` returns a bearer token. `GET /api/v1/auth/me` requires that token. An unknown email and a wrong password both return 401.
+
+A diagnostic centre has a name, a location, and timestamps. The same name may exist in different locations. The same name and location together must be unique.
