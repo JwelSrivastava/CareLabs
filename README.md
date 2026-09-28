@@ -22,4 +22,4 @@ Alembic reads `DATABASE_URL` from `.env`. Apply migrations with:
 alembic upgrade head
 ```
 
-The `users` table stores name, unique email, password hash, role (`USER` or `ADMIN`), and timestamps. Passwords are hashed with Argon2id before they are stored.
+The `users` table stores name, unique email, password hash, role (`USER` or `ADMIN`), and timestamps. Passwords are hashed with Argon2id before they are stored. Access tokens are signed JWTs. The signing secret comes from `JWT_SECRET`.
