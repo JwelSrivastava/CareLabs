@@ -25,3 +25,5 @@ alembic upgrade head
 The `users` table stores name, unique email, password hash, role (`USER` or `ADMIN`), and timestamps. Passwords are hashed with Argon2id before they are stored. Access tokens are signed JWTs. The signing secret comes from `JWT_SECRET`.
 
 `POST /api/v1/auth/signup` creates a normal user. The password must be at least 8 characters. A duplicate email returns 409. Clients cannot choose a role at signup.
+
+`POST /api/v1/auth/login` returns a bearer token. `GET /api/v1/auth/me` requires that token. An unknown email and a wrong password both return 401.
