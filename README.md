@@ -29,3 +29,5 @@ The `users` table stores name, unique email, password hash, role (`USER` or `ADM
 `POST /api/v1/auth/login` returns a bearer token. `GET /api/v1/auth/me` requires that token. An unknown email and a wrong password both return 401.
 
 A diagnostic centre has a name, a location, and timestamps. The same name may exist in different locations. The same name and location together must be unique.
+
+A diagnostic test has a unique name, a description, and timestamps. Centre-specific prices are not stored on the test.
