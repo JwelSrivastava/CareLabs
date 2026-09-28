@@ -31,3 +31,5 @@ The `users` table stores name, unique email, password hash, role (`USER` or `ADM
 A diagnostic centre has a name, a location, and timestamps. The same name may exist in different locations. The same name and location together must be unique.
 
 A diagnostic test has a unique name, a description, and timestamps. Centre-specific prices are not stored on the test.
+
+`centre_tests` links a centre to a test and stores that centre's price. A centre can offer each test only once. The price must be greater than zero.
