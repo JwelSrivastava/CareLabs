@@ -13,3 +13,13 @@ docker compose ps
 ```
 
 `docker-compose.yml` reads `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` from `.env`. Credentials are not stored in the compose file.
+
+## Migrations
+
+Alembic reads `DATABASE_URL` from `.env`. Apply migrations with:
+
+```bash
+alembic upgrade head
+```
+
+The `users` table stores name, unique email, password hash, role (`USER` or `ADMIN`), and timestamps. Passwords are never stored in plaintext.
