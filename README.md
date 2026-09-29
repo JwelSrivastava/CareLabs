@@ -34,4 +34,4 @@ A diagnostic test has a unique name, a description, and timestamps. Centre-speci
 
 `centre_tests` links a centre to a test and stores that centre's price. A centre can offer each test only once. The price must be greater than zero.
 
-Signed-in users can list and fetch diagnostic centres. Only an admin can create, update, or delete them. Lists use `page` and `limit` (maximum 100) and return `items`, `page`, `limit`, and `total`.
+Signed-in users can list and fetch diagnostic centres and tests. Only an admin can create, update, or delete them. Lists use `page` and `limit` (maximum 100) and return `items`, `page`, `limit`, and `total`. A duplicate test name returns 409.
