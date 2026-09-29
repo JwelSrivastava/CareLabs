@@ -37,3 +37,4 @@ class DiagnosticCentre(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    bookings: Mapped[list["Booking"]] = relationship(back_populates="centre")

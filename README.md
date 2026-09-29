@@ -37,3 +37,5 @@ A diagnostic test has a unique name, a description, and timestamps. Centre-speci
 Signed-in users can list and fetch diagnostic centres and tests. Only an admin can create, update, or delete them, or attach a test to a centre. Lists use `page` and `limit` (maximum 100) and return `items`, `page`, `limit`, and `total`. A duplicate test name returns 409.
 
 `POST /api/v1/centres/{centre_id}/tests` sets the price for one centre-test pair. The centre and test must exist, the price must be greater than zero, and the pair cannot be added twice.
+
+A booking belongs to one user, centre, and test. It stores the appointment time, the amount, and a status of `PENDING`, `CONFIRMED`, `FAILED`, or `CANCELLED`. The same user cannot hold two active bookings for the same centre, test, and appointment. Active means `PENDING` or `CONFIRMED`.
