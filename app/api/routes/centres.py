@@ -7,7 +7,14 @@ from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.centre import CentrePublic, CentreWrite
+from app.schemas.centre_test import CentreTestCreate, CentreTestPublic
 from app.schemas.common import Page
+from app.services.centre_test_service import (
+    CentreTestAlreadyExistsError,
+    add_centre_test,
+    list_centre_tests,
+)
+from app.services.test_service import TestNotFoundError
 from app.services.centre_service import (
     CentreAlreadyExistsError,
     CentreNotFoundError,
@@ -90,3 +97,40 @@ def delete_diagnostic_centre(
         delete_centre(db, centre_id)
     except CentreNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Centre not found") from None
+
+
+@router.get("/{centre_id}/tests", response_model=list[CentreTestPublic], summary="List tests offered by a centre")
+def list_offered_tests(
+    centre_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> list[CentreTestPublic]:
+    try:
+        return list_centre_tests(db, centre_id)
+    except CentreNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Centre not found") from None
+
+
+@router.post(
+    "/{centre_id}/tests",
+    response_model=CentreTestPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a test to a centre",
+)
+def add_offered_test(
+    centre_id: uuid.UUID,
+    payload: CentreTestCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> CentreTestPublic:
+    try:
+        return add_centre_test(db, centre_id, payload)
+    except CentreNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Centre not found") from None
+    except TestNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found") from None
+    except CentreTestAlreadyExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This centre already offers the selected test",
+        ) from None

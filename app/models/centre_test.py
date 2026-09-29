@@ -40,5 +40,5 @@ class CentreTest(Base):
         server_default=func.now(),
     )
 
-    centre: Mapped["DiagnosticCentre"] = relationship(back_populates="centre_tests")
-    test: Mapped["DiagnosticTest"] = relationship(back_populates="centre_tests")
+    centre: Mapped["DiagnosticCentre"] = relationship(back_populates="centre_tests", passive_deletes=True)
+    test: Mapped["DiagnosticTest"] = relationship(back_populates="centre_tests", passive_deletes=True)

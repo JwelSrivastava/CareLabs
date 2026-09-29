@@ -32,4 +32,8 @@ class DiagnosticCentre(Base):
         onupdate=func.now(),
     )
 
-    centre_tests: Mapped[list["CentreTest"]] = relationship(back_populates="centre")
+    centre_tests: Mapped[list["CentreTest"]] = relationship(
+        back_populates="centre",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
