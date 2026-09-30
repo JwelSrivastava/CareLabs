@@ -39,3 +39,7 @@ Signed-in users can list and fetch diagnostic centres and tests. Only an admin c
 `POST /api/v1/centres/{centre_id}/tests` sets the price for one centre-test pair. The centre and test must exist, the price must be greater than zero, and the pair cannot be added twice.
 
 A booking belongs to one user, centre, and test. It stores the appointment time, the amount, and a status of `PENDING`, `CONFIRMED`, `FAILED`, or `CANCELLED`. The same user cannot hold two active bookings for the same centre, test, and appointment. Active means `PENDING` or `CONFIRMED`.
+
+`POST /api/v1/bookings` requires a signed-in user. The centre must offer the test, the appointment must be in the future, and the amount is copied from that offering. A client-supplied amount is ignored.
+
+`GET /api/v1/bookings` returns the signed-in user's bookings. An admin receives every booking. The list is paginated. `GET /api/v1/bookings/{booking_id}` returns 403 when the booking belongs to someone else, and 404 when it does not exist. An admin can fetch any booking.
