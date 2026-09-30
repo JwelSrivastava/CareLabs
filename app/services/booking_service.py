@@ -64,7 +64,11 @@ class BookingNotFoundError(Exception):
 
 
 class BookingAccessError(Exception):
-    """Raised when a user tries to read another user's booking."""
+    """Raised when a user tries to read or cancel another user's booking."""
+
+
+class BookingNotCancellableError(Exception):
+    """Raised when the booking status does not allow cancellation."""
 
 
 def list_bookings(db: Session, user: User, page: int, limit: int) -> tuple[list[Booking], int]:
@@ -88,6 +92,16 @@ def get_booking(db: Session, user: User, booking_id: uuid.UUID) -> Booking:
         raise BookingNotFoundError
     if user.role != UserRole.ADMIN and booking.user_id != user.id:
         raise BookingAccessError
+    return booking
+
+
+def cancel_booking(db: Session, user: User, booking_id: uuid.UUID) -> Booking:
+    booking = get_booking(db, user, booking_id)
+    if booking.status != BookingStatus.PENDING:
+        raise BookingNotCancellableError
+    booking.status = BookingStatus.CANCELLED
+    db.commit()
+    db.refresh(booking)
     return booking
 
 

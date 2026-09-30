@@ -76,6 +76,7 @@ class Booking(Base):
         onupdate=func.now(),
     )
 
+    payment: Mapped["Payment | None"] = relationship(back_populates="booking", uselist=False)
     user: Mapped["User"] = relationship(back_populates="bookings")
     centre: Mapped["DiagnosticCentre"] = relationship(back_populates="bookings")
     test: Mapped["DiagnosticTest"] = relationship(back_populates="bookings")

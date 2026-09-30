@@ -43,3 +43,7 @@ A booking belongs to one user, centre, and test. It stores the appointment time,
 `POST /api/v1/bookings` requires a signed-in user. The centre must offer the test, the appointment must be in the future, and the amount is copied from that offering. A client-supplied amount is ignored.
 
 `GET /api/v1/bookings` returns the signed-in user's bookings. An admin receives every booking. The list is paginated. `GET /api/v1/bookings/{booking_id}` returns 403 when the booking belongs to someone else, and 404 when it does not exist. An admin can fetch any booking.
+
+`PATCH /api/v1/bookings/{booking_id}/cancel` is allowed for the booking owner or an admin, and only while the booking is `PENDING`. A confirmed, failed, or already cancelled booking returns 409. Cancelled bookings cannot be paid.
+
+A booking has at most one payment. The payment stores a unique reference, an optional provider transaction id, the amount, and a status of `PENDING`, `SUCCESS`, or `FAILED`.

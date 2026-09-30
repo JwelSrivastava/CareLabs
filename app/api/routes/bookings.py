@@ -12,8 +12,10 @@ from app.services.booking_service import (
     ActiveBookingExistsError,
     AppointmentInPastError,
     BookingAccessError,
+    BookingNotCancellableError,
     BookingNotFoundError,
     CentreDoesNotOfferTestError,
+    cancel_booking,
     create_booking,
     get_booking,
     list_bookings,
@@ -77,4 +79,24 @@ def get_user_booking(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found") from None
     except BookingAccessError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this booking") from None
+    return BookingPublic.model_validate(booking)
+
+
+@router.patch("/{booking_id}/cancel", response_model=BookingPublic, summary="Cancel a booking")
+def cancel_user_booking(
+    booking_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BookingPublic:
+    try:
+        booking = cancel_booking(db, current_user, booking_id)
+    except BookingNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found") from None
+    except BookingAccessError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot cancel this booking") from None
+    except BookingNotCancellableError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending bookings can be cancelled",
+        ) from None
     return BookingPublic.model_validate(booking)
