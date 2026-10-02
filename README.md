@@ -49,3 +49,7 @@ A booking belongs to one user, centre, and test. It stores the appointment time,
 A booking has at most one payment. The payment stores a unique reference, an optional provider transaction id, the amount, and a status of `PENDING`, `SUCCESS`, or `FAILED`.
 
 `POST /api/v1/payments` charges a pending booking owned by the signed-in user. The amount is copied from the booking. The simulated result is success or failure. Success confirms the booking. Failure marks the booking as failed. Both updates are saved in one transaction. A cancelled booking, a booking that is not pending, or a second payment returns 409.
+
+`GET /api/v1/payments/{payment_id}` returns a payment to the booking owner or an admin. Another user receives 403. The provider transaction id is not included in the response.
+
+`POST /api/v1/payments/webhook` applies a provider result of success or failure. Sending the same result again leaves the payment unchanged. A successful payment is not changed to failed. A failed payment can become successful, and the booking is confirmed in the same transaction.

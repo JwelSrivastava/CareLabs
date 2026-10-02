@@ -113,6 +113,7 @@ def test_successful_payment_confirms_the_booking() -> None:
         assert body["booking_id"] == booking_id
         assert Decimal(str(body["amount"])) == Decimal("880.00")
         assert body["payment_reference"].startswith("PAY-")
+        assert "provider_transaction_id" not in body
         booking = client.get(f"/api/v1/bookings/{booking_id}", headers=user_headers)
         assert booking.json()["status"] == "CONFIRMED"
     finally:
@@ -169,6 +170,150 @@ def test_payment_rejects_invalid_cancelled_and_duplicate_bookings() -> None:
             _cleanup([], centre_id_2, test_id_2)
 
 
+def test_payment_retrieval_is_limited_to_the_booking_owner() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Payer")
+    other_email, other_headers = _create_account(UserRole.USER, "Other")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        created = _pay(user_headers, booking_id, PaymentStatus.SUCCESS)
+        assert created.status_code == 201
+        payment_id = created.json()["id"]
+
+        own = client.get(f"/api/v1/payments/{payment_id}", headers=user_headers)
+        assert own.status_code == 200
+        assert own.json()["id"] == payment_id
+        assert "provider_transaction_id" not in own.json()
+
+        hidden = client.get(f"/api/v1/payments/{payment_id}", headers=other_headers)
+        assert hidden.status_code == 403
+
+        admin = client.get(f"/api/v1/payments/{payment_id}", headers=admin_headers)
+        assert admin.status_code == 200
+        assert admin.json()["booking_id"] == booking_id
+
+        missing = client.get(f"/api/v1/payments/{uuid.uuid4()}", headers=user_headers)
+        assert missing.status_code == 404
+    finally:
+        _cleanup([admin_email, user_email, other_email], centre_id, test_id)
+
+
 def test_payment_requires_authentication() -> None:
     response = client.post("/api/v1/payments", json={"booking_id": str(uuid.uuid4())})
     assert response.status_code == 401
+    hidden = client.get(f"/api/v1/payments/{uuid.uuid4()}")
+    assert hidden.status_code == 401
+
+
+def _stored_payment(booking_id: str) -> Payment:
+    db = SessionLocal()
+    try:
+        payment = db.scalar(select(Payment).where(Payment.booking_id == uuid.UUID(booking_id)))
+        assert payment is not None
+        db.expunge(payment)
+        return payment
+    finally:
+        db.close()
+
+
+def test_webhook_replays_success_and_rejects_a_later_failure() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Payer")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        created = _pay(user_headers, booking_id, PaymentStatus.SUCCESS)
+        assert created.status_code == 201
+        stored = _stored_payment(booking_id)
+        payload = {
+            "payment_reference": stored.payment_reference,
+            "status": "SUCCESS",
+            "provider_transaction_id": f"TXN-{uuid.uuid4().hex[:12].upper()}",
+        }
+        first = client.post("/api/v1/payments/webhook", json=payload)
+        second = client.post("/api/v1/payments/webhook", json=payload)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["status"] == "SUCCESS"
+        assert "provider_transaction_id" not in first.json()
+        unchanged = _stored_payment(booking_id)
+        assert unchanged.provider_transaction_id == stored.provider_transaction_id
+        assert unchanged.status == PaymentStatus.SUCCESS
+
+        conflict = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": stored.payment_reference,
+                "status": "FAILED",
+                "provider_transaction_id": f"TXN-{uuid.uuid4().hex[:12].upper()}",
+            },
+        )
+        assert conflict.status_code == 409
+        booking = client.get(f"/api/v1/bookings/{booking_id}", headers=user_headers)
+        assert booking.json()["status"] == "CONFIRMED"
+        still_successful = _stored_payment(booking_id)
+        assert still_successful.status == PaymentStatus.SUCCESS
+
+        missing = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": f"PAY-{uuid.uuid4().hex[:12].upper()}",
+                "status": "SUCCESS",
+                "provider_transaction_id": "TXN-MISSING",
+            },
+        )
+        assert missing.status_code == 404
+        invalid = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": stored.payment_reference,
+                "status": "PENDING",
+                "provider_transaction_id": "TXN-PENDING",
+            },
+        )
+        assert invalid.status_code == 422
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
+
+
+def test_webhook_promotes_a_failed_payment_to_success() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Payer")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        created = _pay(user_headers, booking_id, PaymentStatus.FAILED)
+        assert created.status_code == 201
+        stored = _stored_payment(booking_id)
+        provider_transaction_id = f"TXN-{uuid.uuid4().hex[:12].upper()}"
+        promoted = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": stored.payment_reference,
+                "status": "SUCCESS",
+                "provider_transaction_id": provider_transaction_id,
+            },
+        )
+        assert promoted.status_code == 200
+        assert promoted.json()["status"] == "SUCCESS"
+        assert "provider_transaction_id" not in promoted.json()
+        booking = client.get(f"/api/v1/bookings/{booking_id}", headers=user_headers)
+        assert booking.json()["status"] == "CONFIRMED"
+        updated = _stored_payment(booking_id)
+        assert updated.provider_transaction_id == provider_transaction_id
+
+        replay = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": stored.payment_reference,
+                "status": "SUCCESS",
+                "provider_transaction_id": provider_transaction_id,
+            },
+        )
+        assert replay.status_code == 200
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
