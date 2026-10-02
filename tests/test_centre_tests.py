@@ -196,6 +196,11 @@ def test_add_test_rejects_non_positive_price_and_duplicates() -> None:
         _delete_account(email)
 
 
+def test_offering_list_requires_authentication() -> None:
+    response = client.get(f"/api/v1/centres/{uuid.uuid4()}/tests")
+    assert response.status_code == 401
+
+
 def test_unknown_centre_offering_list_is_not_found() -> None:
     email, headers = _create_account(UserRole.USER)
     try:

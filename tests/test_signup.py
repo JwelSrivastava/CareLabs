@@ -69,6 +69,27 @@ def test_signup_rejects_a_duplicate_email() -> None:
         _delete_user(email)
 
 
+def test_signup_stores_email_in_lowercase() -> None:
+    email = _email()
+    try:
+        response = client.post(
+            "/api/v1/auth/signup",
+            json={"name": "John Doe", "email": email.upper(), "password": "StrongPassword123"},
+        )
+        assert response.status_code == 201
+        assert response.json()["email"] == email
+        assert response.json()["role"] == "USER"
+        db = SessionLocal()
+        try:
+            user = db.scalar(select(User).where(User.email == email))
+            assert user is not None
+            assert user.role.value == "USER"
+        finally:
+            db.close()
+    finally:
+        _delete_user(email)
+
+
 def test_signup_rejects_invalid_input() -> None:
     response = client.post(
         "/api/v1/auth/signup",

@@ -139,6 +139,42 @@ def test_confirmed_booking_cannot_be_cancelled() -> None:
         _cleanup([admin_email, user_email], centre_id, test_id)
 
 
+def test_failed_booking_cannot_be_cancelled() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Owner")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        _set_status(booking_id, BookingStatus.FAILED)
+        response = client.patch(f"/api/v1/bookings/{booking_id}/cancel", headers=user_headers)
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Only pending bookings can be cancelled"
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
+
+
+def test_cancelled_booking_frees_the_slot() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Owner")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        cancelled = client.patch(f"/api/v1/bookings/{booking_id}/cancel", headers=user_headers)
+        assert cancelled.status_code == 200
+        again = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": test_id, "appointment_at": "2027-12-01T09:00:00"},
+            headers=user_headers,
+        )
+        assert again.status_code == 201
+        assert again.json()["id"] != booking_id
+        assert again.json()["status"] == "PENDING"
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
+
+
 def test_cancel_requires_authentication_and_a_real_booking() -> None:
     missing = client.patch(f"/api/v1/bookings/{uuid.uuid4()}/cancel")
     assert missing.status_code == 401

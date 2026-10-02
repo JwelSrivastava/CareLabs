@@ -161,10 +161,65 @@ def test_admin_can_update_and_delete_centre() -> None:
         _delete_account(email)
 
 
+def test_same_name_is_allowed_in_a_different_location() -> None:
+    email, headers = _create_account(UserRole.ADMIN)
+    name = f"Shared Lab {uuid.uuid4()}"
+    first_id = None
+    second_id = None
+    try:
+        first = client.post("/api/v1/centres", json={"name": name, "location": "Mumbai"}, headers=headers)
+        second = client.post("/api/v1/centres", json={"name": name, "location": "Pune"}, headers=headers)
+        assert first.status_code == 201
+        assert second.status_code == 201
+        first_id = first.json()["id"]
+        second_id = second.json()["id"]
+        extra = client.post(
+            "/api/v1/centres",
+            json={"name": name, "location": "Goa", "phone": "000"},
+            headers=headers,
+        )
+        assert extra.status_code == 422
+    finally:
+        if first_id is not None:
+            _delete_centre(first_id)
+        if second_id is not None:
+            _delete_centre(second_id)
+        _delete_account(email)
+
+
+def test_normal_user_cannot_change_a_centre() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN)
+    user_email, user_headers = _create_account(UserRole.USER)
+    centre_id = None
+    try:
+        created = client.post(
+            "/api/v1/centres",
+            json={"name": f"Locked Lab {uuid.uuid4()}", "location": "Delhi"},
+            headers=admin_headers,
+        )
+        assert created.status_code == 201
+        centre_id = created.json()["id"]
+        updated = client.put(
+            f"/api/v1/centres/{centre_id}",
+            json={"name": "Renamed", "location": "Delhi"},
+            headers=user_headers,
+        )
+        assert updated.status_code == 403
+        deleted = client.delete(f"/api/v1/centres/{centre_id}", headers=user_headers)
+        assert deleted.status_code == 403
+    finally:
+        if centre_id is not None:
+            _delete_centre(centre_id)
+        _delete_account(user_email)
+        _delete_account(admin_email)
+
+
 def test_pagination_limit_is_capped() -> None:
     email, headers = _create_account(UserRole.USER)
     try:
         response = client.get("/api/v1/centres?page=1&limit=500", headers=headers)
         assert response.status_code == 422
+        blank_page = client.get("/api/v1/centres?page=0&limit=0", headers=headers)
+        assert blank_page.status_code == 422
     finally:
         _delete_account(email)

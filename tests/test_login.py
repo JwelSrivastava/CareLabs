@@ -70,6 +70,21 @@ def test_login_rejects_an_invalid_password() -> None:
         _delete_user(email)
 
 
+def test_login_rejects_an_unknown_email() -> None:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": _email(), "password": "StrongPassword123"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
+
+
+def test_health_is_public() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_me_requires_a_token() -> None:
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401

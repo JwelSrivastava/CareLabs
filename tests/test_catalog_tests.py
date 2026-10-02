@@ -175,6 +175,39 @@ def test_admin_can_update_and_delete_test() -> None:
         _delete_account(email)
 
 
+def test_normal_user_cannot_change_a_test() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN)
+    user_email, user_headers = _create_account(UserRole.USER)
+    test_id = None
+    try:
+        created = client.post(
+            "/api/v1/tests",
+            json={"name": f"Locked Test {uuid.uuid4()}", "description": "Panel"},
+            headers=admin_headers,
+        )
+        assert created.status_code == 201
+        test_id = created.json()["id"]
+        updated = client.put(
+            f"/api/v1/tests/{test_id}",
+            json={"name": "Renamed", "description": "Panel"},
+            headers=user_headers,
+        )
+        assert updated.status_code == 403
+        deleted = client.delete(f"/api/v1/tests/{test_id}", headers=user_headers)
+        assert deleted.status_code == 403
+        extra = client.post(
+            "/api/v1/tests",
+            json={"name": "Extra", "description": "Panel", "price": 10},
+            headers=admin_headers,
+        )
+        assert extra.status_code == 422
+    finally:
+        if test_id is not None:
+            _delete_test(test_id)
+        _delete_account(user_email)
+        _delete_account(admin_email)
+
+
 def test_test_pagination_limit_is_capped() -> None:
     email, headers = _create_account(UserRole.USER)
     try:

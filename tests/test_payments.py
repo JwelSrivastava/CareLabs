@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.main import app
-from app.models.booking import Booking
+from app.models.booking import Booking, BookingStatus
 from app.models.centre import DiagnosticCentre
 from app.models.payment import Payment, PaymentStatus
 from app.models.test import DiagnosticTest
@@ -200,6 +200,39 @@ def test_payment_retrieval_is_limited_to_the_booking_owner() -> None:
         _cleanup([admin_email, user_email, other_email], centre_id, test_id)
 
 
+def test_admin_cannot_pay_and_a_finished_booking_cannot_be_charged() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Payer")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, booking_id = _offer_and_book(admin_headers, user_headers)
+        admin_pay = client.post("/api/v1/payments", json={"booking_id": booking_id}, headers=admin_headers)
+        assert admin_pay.status_code == 403
+        assert admin_pay.json()["detail"] == "You cannot pay for this booking"
+
+        extra = client.post(
+            "/api/v1/payments",
+            json={"booking_id": booking_id, "amount": "1.00"},
+            headers=user_headers,
+        )
+        assert extra.status_code == 422
+
+        db = SessionLocal()
+        try:
+            booking = db.get(Booking, uuid.UUID(booking_id))
+            assert booking is not None
+            booking.status = BookingStatus.FAILED
+            db.commit()
+        finally:
+            db.close()
+        denied = _pay(user_headers, booking_id, PaymentStatus.SUCCESS)
+        assert denied.status_code == 409
+        assert denied.json()["detail"] == "Only pending bookings can be paid"
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
+
+
 def test_payment_requires_authentication() -> None:
     response = client.post("/api/v1/payments", json={"booking_id": str(uuid.uuid4())})
     assert response.status_code == 401
@@ -315,5 +348,60 @@ def test_webhook_promotes_a_failed_payment_to_success() -> None:
             },
         )
         assert replay.status_code == 200
+    finally:
+        _cleanup([admin_email, user_email], centre_id, test_id)
+
+
+def test_webhook_rejects_a_reused_provider_transaction() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN, "Admin")
+    user_email, user_headers = _create_account(UserRole.USER, "Payer")
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id, first_booking = _offer_and_book(admin_headers, user_headers)
+        second_booking = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": test_id, "appointment_at": "2027-12-20T11:00:00"},
+            headers=user_headers,
+        )
+        assert second_booking.status_code == 201
+        second_id = second_booking.json()["id"]
+        assert _pay(user_headers, first_booking, PaymentStatus.FAILED).status_code == 201
+        assert _pay(user_headers, second_id, PaymentStatus.FAILED).status_code == 201
+        first_payment = _stored_payment(first_booking)
+        second_payment = _stored_payment(second_id)
+        provider_transaction_id = f"TXN-{uuid.uuid4().hex[:12].upper()}"
+        promoted = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": first_payment.payment_reference,
+                "status": "SUCCESS",
+                "provider_transaction_id": provider_transaction_id,
+            },
+        )
+        assert promoted.status_code == 200
+        conflict = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": second_payment.payment_reference,
+                "status": "SUCCESS",
+                "provider_transaction_id": provider_transaction_id,
+                "note": "duplicate",
+            },
+        )
+        assert conflict.status_code == 422
+        reused = client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "payment_reference": second_payment.payment_reference,
+                "status": "SUCCESS",
+                "provider_transaction_id": provider_transaction_id,
+            },
+        )
+        assert reused.status_code == 409
+        assert reused.json()["detail"] == "Payment could not be updated"
+        assert _stored_payment(second_id).status == PaymentStatus.FAILED
+        booking = client.get(f"/api/v1/bookings/{second_id}", headers=user_headers)
+        assert booking.json()["status"] == "FAILED"
     finally:
         _cleanup([admin_email, user_email], centre_id, test_id)

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -187,6 +188,73 @@ def test_past_appointment_is_rejected() -> None:
         )
         assert response.status_code == 400
         assert response.json()["detail"] == "Appointment time must be in the future"
+    finally:
+        _delete_centre(centre_id)
+        _delete_test(test_id)
+        _delete_account(user_email)
+        _delete_account(admin_email)
+
+
+def test_appointments_are_stored_in_utc() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN)
+    user_email, user_headers = _create_account(UserRole.USER)
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id = _offer(admin_headers)
+        naive = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": test_id, "appointment_at": "2027-10-15T10:00:00"},
+            headers=user_headers,
+        )
+        assert naive.status_code == 201
+        naive_at = datetime.fromisoformat(naive.json()["appointment_at"])
+        assert naive_at.astimezone(timezone.utc) == datetime(2027, 10, 15, 10, 0, tzinfo=timezone.utc)
+
+        shifted = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": test_id, "appointment_at": "2027-10-16T15:30:00+05:30"},
+            headers=user_headers,
+        )
+        assert shifted.status_code == 201
+        shifted_at = datetime.fromisoformat(shifted.json()["appointment_at"])
+        assert shifted_at.astimezone(timezone.utc) == datetime(2027, 10, 16, 10, 0, tzinfo=timezone.utc)
+    finally:
+        _delete_centre(centre_id)
+        _delete_test(test_id)
+        _delete_account(user_email)
+        _delete_account(admin_email)
+
+
+def test_missing_centre_or_test_is_not_found() -> None:
+    admin_email, admin_headers = _create_account(UserRole.ADMIN)
+    user_email, user_headers = _create_account(UserRole.USER)
+    centre_id = None
+    test_id = None
+    try:
+        centre_id, test_id = _offer(admin_headers)
+        missing_centre = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": str(uuid.uuid4()), "test_id": test_id, "appointment_at": FUTURE},
+            headers=user_headers,
+        )
+        assert missing_centre.status_code == 404
+        assert missing_centre.json()["detail"] == "Centre not found"
+
+        missing_test = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": str(uuid.uuid4()), "appointment_at": FUTURE},
+            headers=user_headers,
+        )
+        assert missing_test.status_code == 404
+        assert missing_test.json()["detail"] == "Test not found"
+
+        extra = client.post(
+            "/api/v1/bookings",
+            json={"centre_id": centre_id, "test_id": test_id, "appointment_at": FUTURE, "note": "rush"},
+            headers=user_headers,
+        )
+        assert extra.status_code == 422
     finally:
         _delete_centre(centre_id)
         _delete_test(test_id)
