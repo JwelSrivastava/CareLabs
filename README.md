@@ -1,127 +1,45 @@
 # CareLabs
 
-Diagnostic test booking and simulated payment service.
+CareLabs is a diagnostic booking service. A patient signs in, books a test at a centre, and pays through a simulated provider. An admin maintains centres, tests, and the price each centre charges. The same process serves the HTTP API and the website.
 
-## 1. Project overview
 
-CareLabs lets a signed-in patient book a diagnostic test at a centre, pay for that booking through a simulated provider, and receive a later provider result on a webhook. Staff with the admin role manage centres, tests, and the price each centre charges.
+## Requirements
 
-Public identifiers are UUIDs. Configuration comes from environment variables. Passwords are stored only as Argon2id hashes.
+- Python 3.12 or newer for a local virtualenv. The Docker image uses 3.12.
+- Docker Desktop with Compose, if you run the stack in containers.
+- PostgreSQL 16, either from Compose or already installed on the host.
 
-## 2. Architecture
+Pinned packages are in `requirements.txt`: FastAPI, Uvicorn, SQLAlchemy 2, Alembic, Pydantic v2, pydantic-settings, psycopg, PyJWT, pwdlib (Argon2id), email-validator, python-dotenv, pytest, and httpx.
 
-HTTP routes validate input and map service errors to status codes. Services hold the booking and payment rules. SQLAlchemy models own the schema, and Alembic migrates it. One database session is created per request.
+## Configuration
 
-```text
-app/
-  main.py                 FastAPI app and /health
-  api/routes/             auth, centres, tests, bookings, payments
-  api/deps.py             current user and admin checks
-  core/                   settings, database session, password and JWT helpers
-  models/                 users, centres, tests, offerings, bookings, payments
-  schemas/                request and response models
-  services/               business rules and transactions
-  repositories/           user lookup by email
-  scripts/create_admin.py admin account command
-alembic/                  migrations
-tests/                    pytest suite
+Settings come from the environment. The app also reads a `.env` file in the project root. That file is gitignored. Create it before Compose or pytest:
+
+```env
+APP_NAME=CareLabs
+APP_ENV=local
+
+POSTGRES_USER=carelabs
+POSTGRES_PASSWORD=change-me
+POSTGRES_DB=carelabs
+POSTGRES_PORT=5432
+
+DATABASE_URL=postgresql+psycopg://carelabs:change-me@localhost:5432/carelabs
+
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+API_PORT=8000
+
+ADMIN_NAME=CareLabs Admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=change-me-admin-password
 ```
 
-Routes do not calculate prices or change booking state on their own. Payment and booking updates that belong together are committed in one transaction.
+Replace `POSTGRES_PASSWORD`, the password inside `DATABASE_URL`, and `JWT_SECRET` before you run anything. Keep the user, password, database name, and port identical in `POSTGRES_*` and `DATABASE_URL`. Avoid `@`, `:`, `/`, and `#` in the password so the URL stays valid.
 
-## 3. Technology stack
-
-- Python 3.12+ (the Docker image uses 3.12)
-- FastAPI and Uvicorn
-- PostgreSQL 16
-- SQLAlchemy 2.x and Alembic
-- Pydantic v2
-- PyJWT (HS256)
-- pwdlib with Argon2id
-- psycopg
-- pytest and httpx
-- Docker Compose
-
-## 4. Database schema explanation
-
-| Table | Purpose | Important constraints |
-| --- | --- | --- |
-| `users` | Accounts | Unique email, role `USER` or `ADMIN` |
-| `diagnostic_centres` | Labs | Unique pair of name and location |
-| `diagnostic_tests` | Test catalogue | Unique name. No price on this table |
-| `centre_tests` | A test offered by one centre | Unique `(centre_id, test_id)`, price greater than 0. Deleting a centre or test deletes its offerings |
-| `bookings` | An appointment | Amount greater than 0. One active booking per user, centre, test, and appointment. Active means `PENDING` or `CONFIRMED`. Foreign keys restrict deletion of the user, centre, and test |
-| `payments` | One charge for a booking | Unique `booking_id`, unique `payment_reference`, unique `provider_transaction_id` when present. Amount greater than 0 |
-
-Booking statuses are `PENDING`, `CONFIRMED`, `FAILED`, and `CANCELLED`. Payment statuses are `PENDING`, `SUCCESS`, and `FAILED`. A new simulated charge is written as `SUCCESS` or `FAILED` immediately, so a live payment row does not stay `PENDING`.
-
-Naive appointment times are stored as UTC. PostgreSQL may return that instant with the session's local offset. `2027-10-15T10:00:00` and `2027-10-15T15:30:00+05:30` are the same moment.
-
-## 5. Setup instructions
-
-From a clean clone:
-
-```bash
-python -m venv .venv
-```
-
-Windows:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env
-```
-
-macOS or Linux:
-
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-Edit `.env`. Replace `POSTGRES_PASSWORD`, `DATABASE_URL`, and `JWT_SECRET`. Use the same user, password, and database name in `DATABASE_URL` and the `POSTGRES_*` variables. Then start the stack:
-
-```bash
-docker compose up --build
-```
-
-When the API is healthy:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Open `http://127.0.0.1:8000/docs`.
-
-Create the first admin after the database is up. Put real values in the environment, not the placeholders from `.env.example`:
-
-```powershell
-$env:ADMIN_NAME = "Ada Admin"
-$env:ADMIN_EMAIL = "ada@example.com"
-$env:ADMIN_PASSWORD = "replace-with-a-long-password"
-python -m app.scripts.create_admin
-```
-
-The command prints `created`, `promoted`, or `exists`, plus the email. It does not print the password. Signup cannot choose a role, so this command is the way to get an admin. An existing user with the same email is promoted and keeps the current password. Run it again and it leaves an existing admin unchanged.
-
-If the API is running in Compose and those three variables are set in `.env`, the same command works inside the container:
-
-```bash
-docker compose exec api python -m app.scripts.create_admin
-```
-
-To run Uvicorn on the host instead of in Compose, start only Postgres (`docker compose up -d postgres`), apply migrations, then start the app:
-
-```bash
-alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-The host process reads `DATABASE_URL` from `.env`, which points at `localhost`.
-
-## 6. Environment variables
+`DATABASE_URL` is for tools on the host: pytest, Alembic, and Uvicorn started outside Docker. The API container does not use that URL. Compose builds its own URL with hostname `postgres`.
 
 | Variable | Used by | Meaning |
 | --- | --- | --- |
@@ -130,27 +48,34 @@ The host process reads `DATABASE_URL` from `.env`, which points at `localhost`.
 | `POSTGRES_USER` | Postgres container | Database user |
 | `POSTGRES_PASSWORD` | Postgres container | Database password |
 | `POSTGRES_DB` | Postgres container | Database name |
-| `POSTGRES_PORT` | Compose | Host port for Postgres. Default `5432` |
-| `DATABASE_URL` | Host API, Alembic, pytest | SQLAlchemy URL. The API container does not use the host URL |
-| `JWT_SECRET` | API | HMAC secret for access tokens |
+| `POSTGRES_PORT` | Compose | Host port published for Postgres. Default `5432` |
+| `DATABASE_URL` | Host API, Alembic, pytest | SQLAlchemy URL pointing at `localhost` |
+| `JWT_SECRET` | API | HMAC secret for access tokens. Required |
 | `JWT_ALGORITHM` | API | Default `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | API | Access token lifetime. Default `60` |
 | `API_PORT` | Compose | Host port for the API. Default `8000` |
-| `ADMIN_NAME` | Admin command | Display name for the admin account |
+| `ADMIN_NAME` | Admin command | Display name |
 | `ADMIN_EMAIL` | Admin command | Admin email |
-| `ADMIN_PASSWORD` | Admin command | Admin password, 8 to 128 characters |
+| `ADMIN_PASSWORD` | Admin command | Password, 8 to 128 characters |
 
-`.env` is gitignored. Do not commit it.
+The admin command rejects the passwords `change-me` and `change-me-admin-password`. Set `ADMIN_PASSWORD` to a real value before you create the admin.
 
-## 7. Docker instructions
+If port 5432 is already taken on the machine, set `POSTGRES_PORT=5433` in `.env` and use that port in `DATABASE_URL` when you want host tools to reach the Compose database.
 
-`docker-compose.yml` starts two services:
+## Run with Docker
 
-- `postgres` is `postgres:16-alpine`. Credentials come from `.env`. Data is stored in the `carelabs_postgres_data` volume. The service is healthy when `pg_isready` succeeds.
-- `api` is built from the Dockerfile. It waits for a healthy database, runs `alembic upgrade head`, then serves Uvicorn on port 8000. Its `DATABASE_URL` uses the hostname `postgres`, not `localhost`.
+From the project root, with `.env` in place:
 
 ```bash
 docker compose up --build
+```
+
+Compose starts two services:
+
+- `postgres` is `postgres:16-alpine`. Data stays in the `carelabs_postgres_data` volume. The service is healthy when `pg_isready` succeeds.
+- `api` is built from the Dockerfile. It waits for a healthy database, runs `alembic upgrade head`, then serves Uvicorn on port 8000. The image runs as user id 10001. The `web` directory is mounted read-only, so site edits show up without a rebuild.
+
+```bash
 docker compose ps
 docker compose logs api
 docker compose down
@@ -158,29 +83,91 @@ docker compose down
 
 `docker compose down` keeps the database volume. `docker compose down -v` deletes it.
 
-The image runs as a non-root user. It does not copy `.env` or the test suite. Secrets are passed in at runtime.
-
-## 8. Migration instructions
-
-Alembic reads `DATABASE_URL` from the environment. The placeholder URL in `alembic.ini` is not used.
-
-On the host, with Postgres already running:
+Check the API:
 
 ```bash
+curl http://127.0.0.1:8000/health
+```
+
+A healthy process returns `{"status":"ok"}`.
+
+## Run on the host
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+On macOS or Linux, activate with `source .venv/bin/activate`.
+
+Start only Postgres, apply migrations, then run the app:
+
+```bash
+docker compose up -d postgres
 alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+Alembic reads `DATABASE_URL` from the environment. The URL written in `alembic.ini` is unused.
+
+```bash
 alembic downgrade -1
 alembic history
 ```
 
-The API container runs `alembic upgrade head` before it starts listening. Current revisions create users, centres, tests, centre offerings, bookings, and payments.
+The API container runs `alembic upgrade head` on startup, so a Compose-only setup does not need a separate migration command.
 
-## 9. API documentation
+## Website
 
-Interactive docs are at `/docs` and `/redoc`. All versioned routes are under `/api/v1`.
+The site is static HTML, CSS, and JavaScript in `web/`. FastAPI serves it at `/ui`. The browser talks to `/api/v1` on the same origin, so no CORS setup is required.
+
+The access token is kept in `sessionStorage` under `carelabs_token`. Closing the tab signs the user out.
+
+| Section | Who | What it does |
+| --- | --- | --- |
+| Book a test | Signed-in patient | Lists centres and the tests that centre offers, shows the centre’s price, and books a future appointment. The time you pick is sent with your local offset. |
+| Appointments | Signed-in patient | Lists that user’s bookings. A pending booking can be paid or cancelled. |
+| Account | Anyone | Sign in, create an account, or sign out. Signup always creates a normal user. |
+| Manage | Admin | Add a centre, add a test, and set the price that centre charges for a test. Hidden for everyone else. |
+
+Until you sign in, the booking fields stay disabled. Catalogue routes require a token, so an empty dropdown while signed out means the request was not sent. After sign-in, the lists show the centres and tests in the database.
+
+Actions such as booking, payment, cancel, and sign-in show a short notice at the bottom of the page. Payment on the site is the same simulated call as `POST /api/v1/payments`: the result is paid or failed, and no card is charged.
+
+## Admin account
+
+Signup cannot choose a role. Create the first admin with the command below, after the database is migrated and `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` are set to real values:
+
+```powershell
+$env:ADMIN_NAME = "Ada Admin"
+$env:ADMIN_EMAIL = "ada@example.com"
+$env:ADMIN_PASSWORD = "replace-with-a-long-password"
+python -m app.scripts.create_admin
+```
+
+The command prints `created`, `promoted`, or `exists`, plus the email. It does not print the password.
+
+- `created` means a new admin was inserted.
+- `promoted` means an existing user with that email was given the admin role and kept the current password.
+- `exists` means that email is already an admin, and the command changed nothing.
+
+Inside the API container, when those three variables are present in the environment Compose passed in:
+
+```bash
+docker compose exec api python -m app.scripts.create_admin
+```
+
+Use a normal email domain such as `example.com`. The address checker rejects some reserved suffixes.
+
+## API
+
+All versioned routes are under `/api/v1`. Send the access token as `Authorization: Bearer <token>`.
 
 | Method | Path | Who | Success |
 | --- | --- | --- | --- |
 | `GET` | `/health` | Public | 200 |
+| `GET` | `/` | Public | 307 to `/ui/` |
 | `POST` | `/api/v1/auth/signup` | Public | 201 |
 | `POST` | `/api/v1/auth/login` | Public | 200 |
 | `GET` | `/api/v1/auth/me` | Signed in | 200 |
@@ -204,15 +191,24 @@ Interactive docs are at `/docs` and `/redoc`. All versioned routes are under `/a
 | `GET` | `/api/v1/payments/{payment_id}` | Owner or admin | 200 |
 | `POST` | `/api/v1/payments/webhook` | Provider callback | 200 |
 
-List endpoints for centres, tests, and bookings accept `page` and `limit`. `page` is at least 1. `limit` is from 1 to 100 and defaults to 20. The body is `{ "items", "page", "limit", "total" }`. Centre offerings return a list for that centre, not a page.
+List endpoints for centres, tests, and bookings take `page` and `limit`. `page` is at least 1. `limit` is from 1 to 100 and defaults to 20. The body is `{ "items", "page", "limit", "total" }`. Offerings for one centre return a list, not a page.
 
-Write requests reject unknown fields. A booking may include `amount`, and that value is ignored.
+Write bodies reject unknown fields. A booking may include `amount`; that value is ignored and the stored amount is copied from the centre’s price.
 
-Send the access token as `Authorization: Bearer <token>`.
+Public ids are UUIDs. Responses use a `detail` message. Database errors and stack traces are not returned.
 
-## 10. Authentication flow
+| Status | When |
+| --- | --- |
+| 400 | The centre does not offer the test, or the appointment is not in the future |
+| 401 | Missing or invalid token, or a failed login |
+| 403 | A non-admin tried to change the catalogue, or a user opened, cancelled, or paid for someone else’s record |
+| 404 | The centre, test, booking, payment, or webhook reference does not exist |
+| 409 | Duplicate email, centre, test, offering, or active slot. Also an illegal cancel, a second payment, or a webhook conflict |
+| 422 | Invalid body, unknown field, bad UUID, page or limit out of range, or a webhook status of `PENDING` |
 
-Signup accepts `name`, `email`, and `password`. The password must be at least 8 characters. The email is stored in lowercase. The role is always `USER`. A duplicate email returns 409. The response never includes the password or the hash.
+## Authentication
+
+Signup accepts `name`, `email`, and `password`. The password is 8 to 128 characters. The email is stored in lowercase. The role is always `USER`. A duplicate email returns 409. The response omits the password and the hash. Passwords are stored as Argon2id hashes.
 
 Login accepts email and password. An unknown email and a wrong password both return 401 with `Invalid email or password`. A match returns:
 
@@ -223,32 +219,38 @@ Login accepts email and password. An unknown email and a wrong password both ret
 }
 ```
 
-The token is an HS256 JWT. The subject is the user id. The lifetime comes from `ACCESS_TOKEN_EXPIRE_MINUTES`. `GET /api/v1/auth/me` loads that user. A missing, expired, tampered, or unknown token returns 401.
+The token is an HS256 JWT. The subject is the user id. The lifetime is `ACCESS_TOKEN_EXPIRE_MINUTES`. `GET /api/v1/auth/me` loads that user. A missing, expired, tampered, or unknown token returns 401.
 
-## 11. Booking flow
+## Booking
 
-1. An admin creates a centre and a test, then attaches the test to the centre with a price.
+1. An admin creates a centre and a test, then attaches the test to the centre with a price greater than 0.
 2. A signed-in user posts a centre id, a test id, and a future appointment.
 3. The service checks that both records exist and that the centre offers the test.
-4. The amount is copied from `centre_tests`. A client-supplied amount does not change it.
+4. The amount is copied from `centre_tests`.
 5. The booking is saved as `PENDING`.
-6. The same user cannot hold a second `PENDING` or `CONFIRMED` booking for that centre, test, and appointment.
-7. The owner or an admin can cancel a `PENDING` booking. The slot can be booked again after cancellation.
-8. The owner sees only their bookings. An admin sees every booking. Another user receives 403 for a booking they do not own. A missing booking returns 404.
+6. The same user cannot hold a second `PENDING` or `CONFIRMED` booking for that centre, test, and appointment. `CANCELLED` and `FAILED` free the slot. The rule is a partial unique index.
+7. The owner or an admin can cancel while the booking is `PENDING`. Confirmed, failed, and already cancelled bookings return 409.
+8. A user lists only their own bookings. An admin lists every booking. Another user’s booking returns 403. A missing booking returns 404.
 
-## 12. Payment flow
+A timestamp without an offset is treated as UTC. The website sends the local offset so the clock time on the form is the time that is stored.
+
+Booking statuses are `PENDING`, `CONFIRMED`, `FAILED`, and `CANCELLED`.
+
+## Payments
 
 `POST /api/v1/payments` accepts `{ "booking_id": "<uuid>" }`.
 
-The booking is locked, then the service checks that it exists, belongs to the signed-in user, is still `PENDING`, and has no payment yet. An admin cannot pay for someone else's booking. The amount is copied from the booking.
+The booking is locked. It must exist, belong to the signed-in user, still be `PENDING`, and have no payment yet. An admin cannot pay for someone else’s booking. The amount is copied from the booking.
 
-The simulated result is chosen at random: `SUCCESS` or `FAILED`. Success confirms the booking. Failure marks the booking as failed. The payment row stores a unique `PAY-` reference and a provider transaction id. Both rows are committed together. The response omits the provider transaction id.
+The simulated result is `SUCCESS` or `FAILED`, chosen at random inside the service. Success confirms the booking. Failure marks the booking as failed. The payment stores a unique `PAY-` reference and a provider transaction id. Both rows commit together. The API response omits `provider_transaction_id`.
 
-A cancelled booking, a booking that is no longer pending, or a second payment returns 409.
+A cancelled booking, a booking that is no longer pending, or a second payment returns 409. A failed charge still uses the booking’s only payment row. A later success has to arrive on the webhook.
 
-## 13. Webhook flow
+Payment statuses are `PENDING`, `SUCCESS`, and `FAILED`. A new simulated charge is written as `SUCCESS` or `FAILED` immediately.
 
-`POST /api/v1/payments/webhook` does not use a user token. The body is:
+### Webhook
+
+`POST /api/v1/payments/webhook` does not use a user token.
 
 ```json
 {
@@ -258,46 +260,22 @@ A cancelled booking, a booking that is no longer pending, or a second payment re
 }
 ```
 
-`status` must be `SUCCESS` or `FAILED`. The payment and its booking are locked. A matching status is returned again without changing the row, so a repeated event is safe. `SUCCESS` is not changed to `FAILED`. A failed payment can be updated to success, and the booking is confirmed in the same transaction. A provider transaction id that already belongs to another payment returns 409. An unknown reference returns 404.
+`status` must be `SUCCESS` or `FAILED`. The payment and its booking are locked. The same status is returned again without a change. `SUCCESS` is not overwritten by `FAILED`. A failed payment can become `SUCCESS`, and the booking is confirmed in that same transaction. A provider transaction id that already belongs to another payment returns 409. An unknown reference returns 404.
 
-## 14. Business rules
+## Data
 
-- Catalogue reads require a signed-in user. Writes require an admin.
-- Centre identity is the name plus the location. The same name may exist in two locations.
-- Test names are unique. Price lives only on the centre offering and must be greater than 0.
-- The appointment must be in the future. A naive timestamp is UTC.
-- One active booking occupies a user, centre, test, and appointment. `CANCELLED` and `FAILED` free the slot.
-- Cancel only while the booking is `PENDING`. Confirmed, failed, and already cancelled bookings return 409.
-- Cancelled bookings cannot be paid. Only the booking owner can create the payment.
-- A booking has one payment. The client does not choose the outcome.
-- Webhook replay of the same status is a no-op. A successful payment stays successful if a later event says it failed.
+| Table | Purpose | Constraints |
+| --- | --- | --- |
+| `users` | Accounts | Unique email. Role `USER` or `ADMIN` |
+| `diagnostic_centres` | Labs | Unique pair of name and location |
+| `diagnostic_tests` | Test catalogue | Unique name. Price is not stored here |
+| `centre_tests` | A test offered by one centre | Unique `(centre_id, test_id)`. Price greater than 0, up to 10 digits and 2 decimal places. Deleting a centre or test deletes its offerings |
+| `bookings` | An appointment | Amount greater than 0. One active booking per user, centre, test, and appointment. Foreign keys restrict deletion of the user, centre, and test |
+| `payments` | One charge for a booking | Unique `booking_id`, unique `payment_reference`, unique `provider_transaction_id` when set. Amount greater than 0 |
 
-## 15. Error handling
+Migrations live in `alembic/versions` and create users, centres, tests, offerings, bookings, and payments.
 
-| Status | When |
-| --- | --- |
-| 400 | The centre does not offer the test, or the appointment is not in the future |
-| 401 | Missing or invalid token, or wrong login |
-| 403 | A non-admin tried to manage the catalogue, or a user tried to read, cancel, or pay for someone else's record |
-| 404 | The centre, test, booking, or payment does not exist |
-| 409 | Duplicate email, centre, test, offering, or active slot. Also illegal cancel, illegal payment, and a webhook conflict |
-| 422 | Invalid body, unknown field, bad UUID, or a page or limit outside the allowed range |
-
-Clients receive a `detail` message. Database errors and stack traces are not returned. Unhandled conflicts on unique payment data become 409.
-
-## 16. Testing
-
-Postgres must be running and `DATABASE_URL` in `.env` must point at it.
-
-```bash
-pytest
-```
-
-The suite covers signup, login, tokens, password hashing, catalogue permissions, offerings, booking rules, cancellation, payments, webhook replay and conflicts, and the admin command. Payment tests replace the random outcome so success and failure are deterministic.
-
-## 17. Example API requests
-
-Set a token after login:
+## Example requests
 
 ```bash
 curl http://127.0.0.1:8000/health
@@ -309,14 +287,14 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/signup \
 curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"john@example.com\",\"password\":\"StrongPassword123\"}"
-
-curl http://127.0.0.1:8000/api/v1/auth/me \
-  -H "Authorization: Bearer $TOKEN"
 ```
 
-Admin catalogue and a booking:
+Use the token from login as `$TOKEN`, and an admin token as `$ADMIN_TOKEN`:
 
 ```bash
+curl http://127.0.0.1:8000/api/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+
 curl -X POST http://127.0.0.1:8000/api/v1/centres \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
@@ -335,29 +313,45 @@ curl -X POST http://127.0.0.1:8000/api/v1/centres/$CENTRE_ID/tests \
 curl -X POST http://127.0.0.1:8000/api/v1/bookings \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"centre_id\":\"$CENTRE_ID\",\"test_id\":\"$TEST_ID\",\"appointment_at\":\"2027-10-15T10:00:00\",\"amount\":\"1.00\"}"
+  -d "{\"centre_id\":\"$CENTRE_ID\",\"test_id\":\"$TEST_ID\",\"appointment_at\":\"2027-10-15T10:00:00+00:00\"}"
 
 curl -X POST http://127.0.0.1:8000/api/v1/payments \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"booking_id\":\"$BOOKING_ID\"}"
-
-curl -X POST http://127.0.0.1:8000/api/v1/payments/webhook \
-  -H "Content-Type: application/json" \
-  -d "{\"payment_reference\":\"PAY-1234567890AB\",\"status\":\"SUCCESS\",\"provider_transaction_id\":\"TXN-1234567890AB\"}"
 ```
 
-The `amount` on the booking request is ignored. The saved amount is `880.00`.
+The saved booking amount is `880.00`, the price on the offering.
 
+## Tests
 
+Postgres must be running, and `DATABASE_URL` in `.env` must point at it. Host pytest does not use the Compose hostname `postgres`.
 
-## 18. Design decisions
+```bash
+pytest
+```
 
-- The offering table holds the price so two centres can charge different amounts for one test.
-- Signup always creates a normal user. Admin accounts are created with a command so a public request cannot grant that role.
-- Catalogue reads require login. The assignment allows viewing centres and tests, and this service treats that as a signed-in action.
-- The payment result is random inside the service. Tests replace that function. Callers cannot send a flag that forces success.
-- The provider transaction id is stored and is not part of the public payment response.
-- The webhook is unauthenticated because the assignment describes a provider callback and does not define a signing secret.
-- A failed simulated payment still occupies the booking's single payment row. A later success has to arrive on the webhook. A second `POST /payments` is a conflict.
-- The active-slot rule is a partial unique index, so cancellation is race-safe.
+`pytest.ini` sets `pythonpath = .` and `testpaths = tests`. The suite covers passwords, tokens, signup, login, centres, tests, offerings, booking access and cancellation, payments, webhook conflicts, and the admin command. Payment tests replace the random outcome so success and failure are fixed.
+
+## Project layout
+
+```text
+app/
+  main.py                 FastAPI app, /health, redirect to /ui
+  api/routes/             auth, centres, tests, bookings, payments
+  api/deps.py             current user and admin checks
+  core/                   settings, database session, password and JWT helpers
+  models/                 users, centres, tests, offerings, bookings, payments
+  schemas/                request and response models
+  services/               booking and payment rules, one transaction where they change together
+  repositories/           user lookup by email
+  scripts/create_admin.py admin account command
+alembic/                  migrations
+web/                      booking site (index.html, styles.css, app.js)
+tests/                    pytest suite
+Dockerfile                API image
+docker-compose.yml        Postgres and API
+requirements.txt          pinned Python packages
+```
+
+Routes validate input and map service errors to status codes. Services own the booking and payment rules. Models own the schema.
