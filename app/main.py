@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.bookings import router as bookings_router
@@ -24,3 +28,13 @@ app.include_router(tests_router)
 @app.get("/health", tags=["Health"], summary="Service health check")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/", include_in_schema=False)
+def home() -> RedirectResponse:
+    return RedirectResponse(url="/ui/")
+
+
+_web_dir = Path(__file__).resolve().parents[1] / "web"
+if _web_dir.is_dir():
+    app.mount("/ui", StaticFiles(directory=_web_dir, html=True), name="ui")

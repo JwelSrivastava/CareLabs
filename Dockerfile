@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini .
 COPY alembic ./alembic
 COPY app ./app
+COPY web ./web
 
 RUN useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /app
