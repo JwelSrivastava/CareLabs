@@ -3,150 +3,152 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CareLabs — book a diagnostic test</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=5">
+    <title>CareLabs</title>
+    <link rel="stylesheet" href="styles.css?v=6">
   </head>
   <body>
     <header class="mast">
-      <div class="brand">
-        <span class="seal" aria-hidden="true">CL</span>
-        <div>
-          <p class="eyebrow">Diagnostic desk</p>
-          <p class="wordmark">CareLabs</p>
-        </div>
-      </div>
-      <p class="mast-note" id="who">Sign in before you pick a slot.</p>
+      <a class="brand" href="/ui/">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M10 6.5h12M16 6.5v8.2l5.4 8.8a5.2 5.2 0 0 1-4.5 7.7h-1.8a5.2 5.2 0 0 1-4.5-7.7L16 14.7V6.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M12.8 21.2h6.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+        <span class="wordmark">CareLabs</span>
+      </a>
+      <p class="mast-note" id="who">Not signed in</p>
     </header>
 
-    <nav class="tabs" aria-label="Desk">
+    <nav class="tabs" aria-label="Sections">
       <button type="button" class="tab is-on" data-view="book">Book a test</button>
-      <button type="button" class="tab" data-view="appointments">My slips</button>
+      <button type="button" class="tab" data-view="appointments">Appointments</button>
       <button type="button" class="tab" data-view="account">Account</button>
-      <button type="button" class="tab" data-view="desk" id="desk-nav" hidden>Front desk</button>
+      <button type="button" class="tab" data-view="desk" id="desk-nav" hidden>Manage</button>
     </nav>
 
     <main>
-        <section id="view-book" class="view">
-          <div class="banner">
-            <div class="banner-copy">
-              <p class="kicker">What booking a test does</p>
-              <h1>Reserve the centre, the test, and the time before you walk in.</h1>
-              <p class="banner-text">CareLabs holds one appointment under your name. The amount is the price that centre charges for that test, not a number you type. Paying the slip confirms the visit. Leaving it unpaid keeps it pending, and you can cancel until it is confirmed.</p>
-              <ol class="steps">
-                <li><span>1</span>Pick a centre that actually offers the test.</li>
-                <li><span>2</span>Choose a future time on your own clock.</li>
-                <li><span>3</span>Pay to confirm, or cancel while the slip is pending.</li>
-              </ol>
-            </div>
-            <form id="book-form" class="sheet book-card">
-              <h2>Hold a slot</h2>
-              <div class="fields">
-                <label>
-                  Centre
-                  <select id="centre" name="centre_id" required></select>
-                </label>
-                <label>
-                  Test
-                  <select id="offering" name="test_id" required></select>
-                </label>
-                <label class="span-2">
-                  Appointment
-                  <input id="when" name="appointment_at" type="datetime-local" required>
-                </label>
-              </div>
-              <div class="form-foot">
-                <p class="price" id="price">Price appears after you choose a test.</p>
-                <button type="submit">Hold this slot</button>
-              </div>
-              <p class="note" id="book-note" role="status"></p>
-            </form>
+      <section id="view-book" class="view">
+        <div class="book-layout">
+          <div class="book-lead">
+            <h1>Book a test</h1>
+            <p>This saves an appointment under your account. Pick a centre, one test that centre offers, and a time later than now. The amount is that centre’s price. Pay the appointment to confirm it, or cancel it while it is still pending.</p>
+            <ul class="points">
+              <li>The clock time you enter is your local time.</li>
+              <li>The same centre, test, and time can only be held once while the booking is pending or confirmed.</li>
+              <li>Payment does not charge a card. It returns paid or failed, and the appointment follows that result.</li>
+            </ul>
           </div>
-          <div class="more">
-            <h2>Before you book</h2>
-            <div class="facts">
-              <article>
-                <h3>The centre sets the price</h3>
-                <p>Two labs can offer the same test at different amounts. The slip copies the price from the centre you pick.</p>
-              </article>
-              <article>
-                <h3>One live booking per slot</h3>
-                <p>You cannot keep two pending or confirmed bookings for the same centre, test, and time. Cancel the first one to free it.</p>
-              </article>
-              <article>
-                <h3>Payment is a simulation</h3>
-                <p>No card is charged. The desk marks the payment successful or failed, and the booking updates with it.</p>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-appointments" class="view" hidden>
-          <h1>Your slips</h1>
-          <p class="lede">Pending slips can be cancelled or paid. Payment is simulated: it lands as confirmed or failed.</p>
-          <div id="slips" class="slips"></div>
-        </section>
-
-        <section id="view-account" class="view" hidden>
-          <h1>Account</h1>
-          <div id="signed-in" class="sheet" hidden>
-            <h2 id="account-name"></h2>
-            <p id="account-email"></p>
-            <p id="account-role"></p>
-            <button type="button" class="quiet" id="sign-out">Sign out</button>
-          </div>
-          <div id="session" class="split">
-            <form id="login-form" class="sheet">
-              <h2>Sign in</h2>
-              <label>Email <input name="email" type="email" autocomplete="username" required></label>
-              <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-              <button type="submit">Sign in</button>
-              <p class="note" id="login-note" role="status"></p>
-            </form>
-            <form id="signup-form" class="sheet">
-              <h2>New chart</h2>
-              <label>Name <input name="name" autocomplete="name" required></label>
-              <label>Email <input name="email" type="email" autocomplete="email" required></label>
-              <label>Password <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
-              <button type="submit">Create account</button>
-              <p class="note" id="signup-note" role="status"></p>
-            </form>
-          </div>
-        </section>
-
-        <section id="view-desk" class="view" hidden>
-          <h1>Front desk</h1>
-          <p class="lede">Only an admin can put a centre or a test on the board.</p>
-          <div class="split">
-            <form id="centre-form" class="sheet">
-              <h2>Centre</h2>
-              <label>Name <input name="name" required></label>
-              <label>Location <input name="location" required></label>
-              <button type="submit">Add centre</button>
-              <p class="note" id="centre-note" role="status"></p>
-            </form>
-            <form id="test-form" class="sheet">
-              <h2>Test</h2>
-              <label>Name <input name="name" required></label>
-              <label>Description <input name="description" required></label>
-              <button type="submit">Add test</button>
-              <p class="note" id="test-note" role="status"></p>
-            </form>
-          </div>
-          <form id="offer-form" class="sheet">
-            <h2>Price at a centre</h2>
+          <form id="book-form" class="sheet">
+            <h2>Appointment</h2>
             <div class="fields">
-              <label>Centre <select id="offer-centre" name="centre_id" required></select></label>
-              <label>Test <select id="offer-test" name="test_id" required></select></label>
-              <label>Price <input name="price" inputmode="decimal" placeholder="880.00" required></label>
+              <label for="centre">Centre
+                <select id="centre" name="centre_id" required></select>
+              </label>
+              <label for="offering">Test
+                <select id="offering" name="test_id" required></select>
+              </label>
+              <label class="span-2" for="when">Time
+                <input id="when" name="appointment_at" type="datetime-local" required>
+              </label>
             </div>
-            <button type="submit">Attach test</button>
-            <p class="note" id="offer-note" role="status"></p>
+            <div class="form-foot">
+              <p class="price" id="price">Sign in to see prices.</p>
+              <button type="submit" id="book-submit">Book</button>
+            </div>
+            <p class="note" id="book-note" role="status"></p>
+            <button type="button" class="text-link" id="book-signin" hidden>Go to sign in</button>
           </form>
-        </section>
+        </div>
+      </section>
+
+      <section id="view-appointments" class="view" hidden>
+        <h1>Appointments</h1>
+        <p class="lede">Pending appointments can be paid or cancelled. Confirmed and failed ones stay as they are.</p>
+        <div id="slips" class="slips"></div>
+      </section>
+
+      <section id="view-account" class="view" hidden>
+        <h1>Account</h1>
+        <div id="signed-in" class="sheet" hidden>
+          <h2 id="account-name"></h2>
+          <p id="account-email"></p>
+          <p id="account-role"></p>
+          <button type="button" class="quiet" id="sign-out">Sign out</button>
+        </div>
+        <div id="session" class="split">
+          <form id="login-form" class="sheet">
+            <h2>Sign in</h2>
+            <label for="login-email">Email
+              <input id="login-email" name="email" type="email" autocomplete="username" required>
+            </label>
+            <label for="login-password">Password
+              <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <button type="submit">Sign in</button>
+            <p class="note" id="login-note" role="status"></p>
+          </form>
+          <form id="signup-form" class="sheet">
+            <h2>Create account</h2>
+            <label for="signup-name">Name
+              <input id="signup-name" name="name" autocomplete="name" required>
+            </label>
+            <label for="signup-email">Email
+              <input id="signup-email" name="email" type="email" autocomplete="email" required>
+            </label>
+            <label for="signup-password">Password
+              <input id="signup-password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+            </label>
+            <button type="submit">Create account</button>
+            <p class="note" id="signup-note" role="status"></p>
+          </form>
+        </div>
+      </section>
+
+      <section id="view-desk" class="view" hidden>
+        <h1>Manage</h1>
+        <p class="lede">Add a centre, a test, then the price that centre charges.</p>
+        <div class="split">
+          <form id="centre-form" class="sheet">
+            <h2>Centre</h2>
+            <label for="centre-name">Name
+              <input id="centre-name" name="name" required>
+            </label>
+            <label for="centre-location">Location
+              <input id="centre-location" name="location" required>
+            </label>
+            <button type="submit">Add centre</button>
+            <p class="note" id="centre-note" role="status"></p>
+          </form>
+          <form id="test-form" class="sheet">
+            <h2>Test</h2>
+            <label for="test-name">Name
+              <input id="test-name" name="name" required>
+            </label>
+            <label for="test-description">Description
+              <input id="test-description" name="description" required>
+            </label>
+            <button type="submit">Add test</button>
+            <p class="note" id="test-note" role="status"></p>
+          </form>
+        </div>
+        <form id="offer-form" class="sheet">
+          <h2>Price at a centre</h2>
+          <div class="fields">
+            <label for="offer-centre">Centre
+              <select id="offer-centre" name="centre_id" required></select>
+            </label>
+            <label for="offer-test">Test
+              <select id="offer-test" name="test_id" required></select>
+            </label>
+            <label for="offer-price">Price
+              <input id="offer-price" name="price" inputmode="decimal" placeholder="880.00" required>
+            </label>
+          </div>
+          <button type="submit">Save price</button>
+          <p class="note" id="offer-note" role="status"></p>
+        </form>
+      </section>
     </main>
-    <script src="app.js?v=5"></script>
+    <div id="toast" class="toast" hidden role="status"></div>
+    <script src="app.js?v=6"></script>
   </body>
 </html>

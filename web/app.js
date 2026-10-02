@@ -65,6 +65,19 @@ function say(id, message, bad = false) {
   node.classList.toggle("is-bad", bad);
 }
 
+let toastTimer = 0;
+
+function notify(message, bad = false) {
+  const node = $("toast");
+  node.hidden = false;
+  node.textContent = message;
+  node.classList.toggle("is-bad", bad);
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    node.hidden = true;
+  }, 4200);
+}
+
 function show(view) {
   document.querySelectorAll(".view").forEach((section) => {
     section.hidden = section.id !== `view-${view}`;
@@ -83,7 +96,7 @@ function signOut(goToAccount = true) {
   state.me = null;
   sessionStorage.removeItem(tokenKey);
   $("desk-nav").hidden = true;
-  $("who").textContent = "Sign in before you pick a slot.";
+  $("who").textContent = "Not signed in";
   if (goToAccount) show("account");
 }
 
@@ -93,16 +106,16 @@ async function refreshMe() {
     return;
   }
   state.me = await api("/api/v1/auth/me");
-  $("who").textContent = `${state.me.name} · ${state.me.role === "ADMIN" ? "front desk" : "patient"}`;
+  $("who").textContent = state.me.role === "ADMIN" ? `${state.me.name}, admin` : state.me.name;
   $("desk-nav").hidden = state.me.role !== "ADMIN";
 }
 
-function fillSelect(select, rows, label) {
+function fillSelect(select, rows, label, emptyLabel) {
   select.innerHTML = "";
   if (!rows.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Nothing listed yet";
+    option.textContent = emptyLabel;
     select.append(option);
     return;
   }
@@ -140,26 +153,45 @@ async function loadOfferings(centreId) {
 function showPrice() {
   const selected = $("offering").selectedOptions[0];
   const price = selected && selected.dataset.price;
-  $("price").textContent = price ? `Centre price ${money(price)}` : "This centre has nothing on the board yet.";
+  if (!state.token) {
+    $("price").textContent = "Sign in to see prices.";
+    return;
+  }
+  if (!state.offerings.length) {
+    $("price").textContent = "No tests at this centre.";
+    return;
+  }
+  $("price").textContent = price ? money(price) : "Select a test.";
+}
+
+function lockBooking(locked) {
+  $("centre").disabled = locked;
+  $("offering").disabled = locked;
+  $("when").disabled = locked;
+  $("book-submit").disabled = locked;
+  $("book-signin").hidden = !locked;
 }
 
 async function loadBookForm() {
   if (!state.token) {
-    say("book-note", "Sign in on the Account tab first.", true);
-    fillSelect($("centre"), [], () => "");
-    fillSelect($("offering"), [], () => "");
+    lockBooking(true);
+    fillSelect($("centre"), [], () => "", "Sign in to see centres");
+    fillSelect($("offering"), [], () => "", "Sign in to see tests");
+    showPrice();
+    say("book-note", "");
     return;
   }
+  lockBooking(false);
   try {
     const centres = await loadCentres();
-    fillSelect($("centre"), centres, (centre) => `${centre.name} — ${centre.location}`);
+    fillSelect($("centre"), centres, (centre) => `${centre.name}, ${centre.location}`, "No centres yet");
     await loadOfferings($("centre").value);
-    fillSelect($("offering"), state.offerings, (row) => row.test_name);
+    fillSelect($("offering"), state.offerings, (row) => row.test_name, "No tests at this centre");
     showPrice();
-    if (!centres.length) say("book-note", "No centres are on the board yet.", true);
-    else say("book-note", "");
+    say("book-note", centres.length ? "" : "No centres yet. An admin has to add one.", true);
   } catch (error) {
     say("book-note", error.message, true);
+    notify(error.message, true);
   }
 }
 
@@ -167,13 +199,13 @@ async function loadSlips() {
   const host = $("slips");
   host.innerHTML = "";
   if (!state.token) {
-    host.innerHTML = '<p class="empty">Sign in to see your slips.</p>';
+    host.innerHTML = '<p class="empty">Sign in to see appointments.</p>';
     return;
   }
   try {
     const page = await api("/api/v1/bookings?page=1&limit=50");
     if (!page.items.length) {
-      host.innerHTML = '<p class="empty">No slips yet. Book a test first.</p>';
+      host.innerHTML = '<p class="empty">No appointments yet.</p>';
       return;
     }
     const centres = new Map((await loadCentres()).map((centre) => [centre.id, centre]));
@@ -222,28 +254,29 @@ async function pay(bookingId, slip) {
       method: "POST",
       body: JSON.stringify({ booking_id: bookingId }),
     });
-    const line = document.createElement("p");
-    line.textContent = `Payment ${payment.payment_reference} · ${payment.status}`;
-    slip.append(line);
+    notify(payment.status === "SUCCESS" ? `Paid. Reference ${payment.payment_reference}.` : `Payment failed. Reference ${payment.payment_reference}.`, payment.status !== "SUCCESS");
     await loadSlips();
   } catch (error) {
-    const line = document.createElement("p");
-    line.textContent = error.message;
-    slip.append(line);
+    notify(error.message, true);
   }
 }
 
 async function cancel(bookingId) {
-  await api(`/api/v1/bookings/${bookingId}/cancel`, { method: "PATCH" });
-  await loadSlips();
+  try {
+    await api(`/api/v1/bookings/${bookingId}/cancel`, { method: "PATCH" });
+    notify("Appointment cancelled.");
+    await loadSlips();
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 
 async function loadDesk() {
   if (!state.me || state.me.role !== "ADMIN") return;
   const centres = await loadCentres();
   const tests = await loadTests();
-  fillSelect($("offer-centre"), centres, (centre) => `${centre.name} — ${centre.location}`);
-  fillSelect($("offer-test"), tests, (test) => test.name);
+  fillSelect($("offer-centre"), centres, (centre) => `${centre.name}, ${centre.location}`, "No centres yet");
+  fillSelect($("offer-test"), tests, (test) => test.name, "No tests yet");
 }
 
 function renderAccount() {
@@ -253,7 +286,7 @@ function renderAccount() {
   if (!signedIn) return;
   $("account-name").textContent = state.me.name;
   $("account-email").textContent = state.me.email;
-  $("account-role").textContent = state.me.role === "ADMIN" ? "Front desk" : "Patient";
+  $("account-role").textContent = state.me.role === "ADMIN" ? "Admin" : "Patient";
 }
 
 $("sign-out").addEventListener("click", signOut);
@@ -262,10 +295,17 @@ document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => show(button.dataset.view));
 });
 
+$("book-signin").addEventListener("click", () => show("account"));
+
 $("centre").addEventListener("change", async () => {
-  await loadOfferings($("centre").value);
-  fillSelect($("offering"), state.offerings, (row) => row.test_name);
-  showPrice();
+  if (!state.token || !$("centre").value) return;
+  try {
+    await loadOfferings($("centre").value);
+    fillSelect($("offering"), state.offerings, (row) => row.test_name, "No tests at this centre");
+    showPrice();
+  } catch (error) {
+    say("book-note", error.message, true);
+  }
 });
 
 $("offering").addEventListener("change", showPrice);
@@ -286,7 +326,8 @@ $("book-form").addEventListener("submit", async (event) => {
         appointment_at: localTimestamp($("when").value),
       }),
     });
-    say("book-note", `Slot held. Amount ${money(booking.amount)}.`);
+    notify(`Booked for ${money(booking.amount)}.`);
+    say("book-note", `Booked for ${money(booking.amount)}.`);
     show("appointments");
   } catch (error) {
     say("book-note", error.message, true);
@@ -305,6 +346,7 @@ $("login-form").addEventListener("submit", async (event) => {
     sessionStorage.setItem(tokenKey, state.token);
     await refreshMe();
     say("login-note", "");
+    notify(`Signed in as ${state.me.name}.`);
     show("book");
   } catch (error) {
     say("login-note", error.message, true);
@@ -325,7 +367,8 @@ $("signup-form").addEventListener("submit", async (event) => {
       }),
     });
     form.reset();
-    say("signup-note", "Chart created. Sign in with the same email.");
+    say("signup-note", "Account created. Sign in with that email.");
+    notify("Account created.");
   } catch (error) {
     say("signup-note", error.message, true);
   }
@@ -342,6 +385,7 @@ $("centre-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     say("centre-note", "Centre added.");
+    notify("Centre added.");
     await loadDesk();
   } catch (error) {
     say("centre-note", error.message, true);
@@ -359,6 +403,7 @@ $("test-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     say("test-note", "Test added.");
+    notify("Test added.");
     await loadDesk();
   } catch (error) {
     say("test-note", error.message, true);
@@ -373,7 +418,8 @@ $("offer-form").addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ test_id: data.get("test_id"), price: data.get("price") }),
     });
-    say("offer-note", "Price attached.");
+    say("offer-note", "Price saved.");
+    notify("Price saved.");
   } catch (error) {
     say("offer-note", error.message, true);
   }
