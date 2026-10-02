@@ -47,3 +47,5 @@ A booking belongs to one user, centre, and test. It stores the appointment time,
 `PATCH /api/v1/bookings/{booking_id}/cancel` is allowed for the booking owner or an admin, and only while the booking is `PENDING`. A confirmed, failed, or already cancelled booking returns 409. Cancelled bookings cannot be paid.
 
 A booking has at most one payment. The payment stores a unique reference, an optional provider transaction id, the amount, and a status of `PENDING`, `SUCCESS`, or `FAILED`.
+
+`POST /api/v1/payments` charges a pending booking owned by the signed-in user. The amount is copied from the booking. The simulated result is success or failure. Success confirms the booking. Failure marks the booking as failed. Both updates are saved in one transaction. A cancelled booking, a booking that is not pending, or a second payment returns 409.
